@@ -1,0 +1,886 @@
+Index: app/src/main/AndroidManifest.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/AndroidManifest.xml	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/AndroidManifest.xml	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -2,6 +2,11 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+     package="com.ifmg.carteiramensal">
+ 
++    <uses-permission android:name="android.permission.CAMERA"/>
++    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
++    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
++
++
+     <application
+         android:allowBackup="true"
+         android:icon="@mipmap/ic_launcher"
+Index: app/src/main/java/com/ifmg/carteiramensal/CadastroEdicaoEvento.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/java/com/ifmg/carteiramensal/CadastroEdicaoEvento.java	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/java/com/ifmg/carteiramensal/CadastroEdicaoEvento.java	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -4,7 +4,11 @@
+ 
+ import android.app.DatePickerDialog;
+ import android.content.Intent;
++import android.graphics.Bitmap;
++import android.graphics.BitmapFactory;
+ import android.os.Bundle;
++import android.os.Environment;
++import android.provider.MediaStore;
+ import android.view.View;
+ import android.widget.ArrayAdapter;
+ import android.widget.Button;
+@@ -16,12 +20,16 @@
+ import android.widget.TextView;
+ import android.widget.Toast;
+ 
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.FileOutputStream;
+ import java.text.ParseException;
+ import java.text.SimpleDateFormat;
+ import java.util.ArrayList;
+ import java.util.Calendar;
+ import java.util.Date;
+ import java.util.List;
++import java.util.Random;
+ 
+ import ferramentas.EventosDB;
+ import modelo.Evento;
+@@ -41,10 +49,11 @@
+     private Calendar calendarioTemp;
+     private Spinner mesesRepeteSpi;
+ 
+-    //0 - cadastro de entrada, 1- cadastro de saída, 2- edição de entrada, 3- edição de saída
++
++    //0 - cadastro de entrada; 1- cadastro de saída; 2- edição de entrada; 3- edição de saída
+     private int acao = -1;
+-
+-
++    private Evento eventoSelecionado;
++    private String nomeFoto;
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+         super.onCreate(savedInstanceState);
+@@ -71,7 +80,7 @@
+     }
+     private void confSpinners(){
+         List<String> meses = new ArrayList<>();
+-        //vamos permitir nessa versão a repetição de apenas 24 meses de um evento
++        //permissão da repetição de apenas 24 meses de um evento
+         for(int i = 1; i<= 24; i++){
+             meses.add(i+"");
+         }
+@@ -82,8 +91,12 @@
+     }
+ 
+     private void cadastraEventos(){
+-        //Configurando o DatePicher
++        //Configuração do DatePicher
+         calendarioTemp = Calendar.getInstance();
++        if(acao >= 2){
++            calendarioTemp.setTime(eventoSelecionado.getOcorreu());
++        }
++
+         calendarioUsuario = new DatePickerDialog(CadastroEdicaoEvento.this, new DatePickerDialog.OnDateSetListener() {
+             @Override
+             public void onDateSet(DatePicker view, int ano, int mes, int dia) {
+@@ -102,7 +115,13 @@
+         salvarBtn.setOnClickListener(new View.OnClickListener() {
+             @Override
+             public void onClick(View v) {
+-                cadastrarNovoEvento();
++                if(acao < 2) {
++                    //cadastro de um novo evento
++                    cadastrarNovoEvento();
++                }else{
++                    //update do evento
++                    updateEvento();
++                }
+             }
+         });
+         //Tratando a repetição do evento
+@@ -121,16 +140,81 @@
+         cancelarBtn.setOnClickListener(new View.OnClickListener() {
+             @Override
+             public void onClick(View v) {
+-                //Termina a execuçao de uma Activity e retorna a anterior
+-                finish();
++                if(acao<2) {
++                    //Termina a execucao de uma Activity e retorna a anterior
++                    finish();
++                }else{
++                    //chamará o metodo delete do banco de dados
++                }
++            }
++        });
++
++        fotoBtn.setOnClickListener(new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                Intent cameraActivity = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
++
++                startActivityForResult(cameraActivity, 100);
+             }
+         });
+     }
+ 
++    protected void onActivityResult(int requestCode, int resultCode, Intent data){
++        super.onActivityResult(requestCode, resultCode, data);
++
++        if(resultCode == RESULT_OK){
++            Bitmap imagemUser = (Bitmap) data.getExtras().get("data");
++            foto.setImageBitmap(imagemUser);
++            foto.setBackground(null);
++
++            salvarImagem(imagemUser);
++        }
++    }
++    private void salvarImagem(Bitmap img){
++        Random gerador = new Random();
++        Date instate = new Date();
++
++        //definindo o nome da foto
++        String nome = gerador.nextInt() + ""+instate.getTime() + ".png";
++        nomeFoto = nome;
++
++        File sd = Environment.getExternalStorageDirectory();
++        File fotoArquivo = new File(sd, nome);
++
++        //processo de gravacao em sistema de armazenamento no smartphone(dispositivo)
++        try{
++            FileOutputStream gravador = new FileOutputStream(fotoArquivo);
++            img.compress(Bitmap.CompressFormat.PNG, 100, gravador);
++            gravador.flush();
++            gravador.close();
++
++        }catch (Exception ex){
++            System.err.println("erro ao armazenar a foto");
++        }
++    }
++    //metodo chamado durante a edicao
++    private void carregarImagem(){
++        if(nomeFoto != null){
++            File sd= Environment.getExternalStorageDirectory();
++            File arquivoLeirura = new File(sd, nomeFoto);
++
++            try{
++                FileInputStream leitor = new FileInputStream(arquivoLeirura);
++                Bitmap img = BitmapFactory.decodeStream(leitor);
+ 
+-    // método que auxilia na reutilização da activity, altera valores dos componentes reutilizáveis
++                foto.setImageBitmap(img);
++                foto.setBackground(null);
++
++            }catch (Exception e){
++                System.err.println("erro na leitura da foto");
++            }
++        }
++    }
++
++
++    // metodo que auxilia na reutilização da activity, modifica valores dos componentes reutilizaveis
+     private void ajustaPorAcao(){
+-        // recuperando a data de hj
++        // recuperacao da data de hj
+ 
+         Calendar hoje = Calendar.getInstance();
+ 
+@@ -146,11 +230,13 @@
+                 tituloTxt.setText("Cadast. Saída");
+             }break;
+             case 2:{
+-                //edição de entradas
++                //edicao de entradas
+                 tituloTxt.setText("Edição Entrada");
++                ajusteEdicao();
+             }break;
+-            case 3:{//edição de saídas
++            case 3:{//edicao de saidas
+                 tituloTxt.setText("Edição Saída");
++                ajusteEdicao();
+             }break;
+             default:{
+ 
+@@ -158,6 +244,71 @@
+ 
+         }
+ 
++    }
++
++    private void ajusteEdicao(){
++        cancelarBtn.setText("excluir");
++        salvarBtn.setText("atualizar");
++
++        int id = Integer.parseInt(getIntent().getStringExtra("id"));
++
++        if(id != 0){
++            EventosDB db = new EventosDB(CadastroEdicaoEvento.this);
++            eventoSelecionado = db.buscaEvento(id);
++
++            //carregar as inf dos campos recuperados do banco
++            SimpleDateFormat formatar = new SimpleDateFormat("dd/MM/yyyy");
++            nomeTxt.setText(eventoSelecionado.getNome());
++            valorTxt.setText(eventoSelecionado.getValor()+"");
++            dataTxt.setText(formatar.format(eventoSelecionado.getOcorreu()));
++
++            nomeFoto = eventoSelecionado.getCaminhoFoto();
++            carregarImagem();
++
++            Calendar d1 = Calendar.getInstance();
++            d1.setTime(eventoSelecionado.getValida());
++
++            Calendar d2 = Calendar.getInstance();
++            d2.setTime(eventoSelecionado.getOcorreu());
++
++            repeteBtn.setChecked(d1.get(Calendar.MONTH) != d2.get(Calendar.MONTH)? true: false);
++
++            if(repeteBtn.isChecked()){
++                mesesRepeteSpi.setEnabled(true);
++
++                //diferenca entre mes de cadastro e mes de validade
++                mesesRepeteSpi.setSelection(d1.get(Calendar.MONTH) - d2.get(Calendar.MONTH) -1);
++
++            }
++        }
++    }
++
++    private void updateEvento(){
++        eventoSelecionado.setNome(nomeTxt.getText().toString());
++        eventoSelecionado.setValor(Double.parseDouble(valorTxt.getText().toString()));
++        if(acao == 3){
++            eventoSelecionado.setValor(eventoSelecionado.getValor() * -1);
++        }
++
++        eventoSelecionado.setOcorreu(calendarioTemp.getTime());
++        //um novo calendario para calcular a data limite (repeticao)
++        Calendar dataLimite = Calendar.getInstance();
++        dataLimite.setTime(calendarioTemp.getTime());
++
++        //verificando se esse evento ira repetir por alguns meses
++        if(repeteBtn.isChecked()){
++            //por enquanto estamos considerando apenas um mes
++            String mesStr = (String)mesesRepeteSpi.getSelectedItem();
++            dataLimite.add(Calendar.MONTH, Integer.parseInt(mesStr));
++        }
++        //setando para o ultimo dia do mes limite
++        dataLimite.set(Calendar.DAY_OF_MONTH, dataLimite.getActualMaximum(Calendar.DAY_OF_MONTH));
++        eventoSelecionado.setValida(dataLimite.getTime());
++        eventoSelecionado.setCaminhoFoto(nomeFoto);
++
++        EventosDB db = new EventosDB(CadastroEdicaoEvento.this);
++        db.updateEvento(eventoSelecionado);
++        finish();
+     }
+     private void cadastrarNovoEvento(){
+ 
+@@ -174,20 +325,20 @@
+         //try {
+ 
+             Date diaEvento = calendarioTemp.getTime();
+-            //um novo calendario para calcular a data limite (repetição)
++            //um novo calendario para calcular a data limite)
+             Calendar dataLimite = Calendar.getInstance();
+             dataLimite.setTime(calendarioTemp.getTime());
+ 
+-            //verificando se esse evento irá repetir por alguns meses
++            //verificando se esse evento ira repetir por alguns meses
+             if(repeteBtn.isChecked()){
+-            //por enquanto estamos considerando apenas um mes
++            //considerando apenas um mes
+                 String mesStr = (String)mesesRepeteSpi.getSelectedItem();
+                 dataLimite.add(Calendar.MONTH, Integer.parseInt(mesStr));
+             }
+-            //setando para o ultimo dia do mes limite
++            //settando para o ultimo dia do mes limite
+             dataLimite.set(Calendar.DAY_OF_MONTH, dataLimite.getActualMaximum(Calendar.DAY_OF_MONTH));
+ 
+-            Evento novoEvento = new Evento(nome, valor, new Date(), dataLimite.getTime(), diaEvento, null);
++            Evento novoEvento = new Evento(nome, valor, new Date(), dataLimite.getTime(), diaEvento, nomeFoto);
+ 
+             //inserir esse evento no banco de dados
+             EventosDB bd = new EventosDB(CadastroEdicaoEvento.this);
+Index: app/src/main/java/com/ifmg/carteiramensal/MainActivity.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/java/com/ifmg/carteiramensal/MainActivity.java	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/java/com/ifmg/carteiramensal/MainActivity.java	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -1,8 +1,12 @@
+ package com.ifmg.carteiramensal;
+ 
+ import androidx.appcompat.app.AppCompatActivity;
++import androidx.core.app.ActivityCompat;
++import androidx.core.content.ContextCompat;
+ 
++import android.Manifest;
+ import android.content.Intent;
++import android.content.pm.PackageManager;
+ import android.os.Bundle;
+ import android.view.View;
+ import android.widget.Button;
+@@ -47,7 +51,7 @@
+         anteriorBtn = (Button) findViewById(R.id.anteriorBtn);
+         proxBtn = (Button) findViewById(R.id.proximoBtn);
+         novoBtn = (Button) findViewById(R.id.novoBtn);
+-        //responsável por emplementar todos os eventos de botões
++        //responsavel por emplementar todos os eventos de botoes
+         cadastroEventos();
+ 
+ 
+@@ -57,7 +61,16 @@
+ 
+         mostraDataApp();
+         atualizaValores();
++        configuraPermissoes();
+ 
++    }
++    private void configuraPermissoes(){
++        if(ContextCompat.checkSelfPermission(getBaseContext(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
++            || ContextCompat.checkSelfPermission(getBaseContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED ||
++                ContextCompat.checkSelfPermission(getBaseContext(), Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED){
++            ActivityCompat.requestPermissions(MainActivity.this,
++                    new String[]{Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE},0);
++        }
+     }
+     private void cadastroEventos(){
+         anteriorBtn.setOnClickListener(new View.OnClickListener() {
+@@ -102,7 +115,7 @@
+                 Intent trocaAct = new Intent(MainActivity.this, VisualizarEventos.class);
+ 
+                 trocaAct.putExtra("acao", 1);
+-                //pedimos para iniciar a activity passada como parametro
++                //pedindo para iniciar a activity passada como parametro
+                 startActivityForResult(trocaAct, 1);
+             }
+         });
+@@ -122,13 +135,13 @@
+     }
+     private void atualizaMes(int ajuste){
+         dataApp.add(Calendar.MONTH, ajuste);
+-        //próximo ês não pode passar do mês atual
++        //proximo mes nao pode passar do mes atual
+         if(ajuste > 0){
+             if(dataApp.after(hoje)){
+                 dataApp.add(Calendar.MONTH,-1);
+             }
+         }else{
+-            //busca no banco de dados para avaliar se há dados dos messes anteriores
++            //busca no banco de dados para avaliar se tem dados dos messes anteriores
+         }
+ 
+ 
+@@ -137,7 +150,7 @@
+     }
+ 
+     private  void atualizaValores(){
+-        //buscando as entradas e as saídas nesse memo banco de dados
++        //buscando as entradas e as saidas nesse memo banco de dados
+         EventosDB db = new EventosDB(MainActivity.this);
+ 
+         ArrayList<Evento> saidasListas = db.buscaEvento(1, dataApp);
+Index: app/src/main/java/com/ifmg/carteiramensal/VisualizarEventos.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/java/com/ifmg/carteiramensal/VisualizarEventos.java	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/java/com/ifmg/carteiramensal/VisualizarEventos.java	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -6,6 +6,7 @@
+ import android.content.Intent;
+ import android.os.Bundle;
+ import android.view.View;
++import android.widget.AdapterView;
+ import android.widget.Button;
+ import android.widget.ListView;
+ import android.widget.TextView;
+@@ -28,7 +29,7 @@
+     private itemListaEvento adapter;
+ 
+ 
+-    //0peração = 0 indica entrada e operação = 1indica saída
++    //0peracao = 0 indica entrada e operacao = 1 indica saida
+     private int operacao = -1;
+ 
+ 
+@@ -46,7 +47,7 @@
+ 
+         Intent intencao = getIntent();
+         operacao = intencao.getIntExtra("acao", -1);
+-        //0 - entrada e 1 - saída
++        //0 - entrada e 1 - saida
+ 
+         ajustaOperacao();
+         cadastrarEventos();
+@@ -110,6 +111,31 @@
+         adapter = new itemListaEvento(getApplicationContext(), eventos);
+         listaEventos.setAdapter(adapter);
+ 
++        listaEventos.setOnClickListener((new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                listaEventos.setOnItemClickListener(new AdapterView.OnItemClickListener() {
++                    @Override
++                    public void onItemClick(AdapterView<?> parent, View view, int indice, long id) {
++                        Evento eventoSelecionado = eventos.get(indice);
++                        Intent novoFluxo = new Intent(VisualizarEventos.this, CadastroEdicaoEvento.class);
++                        if(operacao == 0){
++                            novoFluxo.putExtra("acao", 2);
++
++                        }else{
++                            novoFluxo.putExtra("acao", 3);
++                        }
++
++                        novoFluxo.putExtra("acao", eventoSelecionado.getId()+ "");
++
++                        startActivityForResult(novoFluxo, operacao);
++                    }
++                });
++            }
++        }));
++
++
++
+         double total = 0.0;
+         for(int i = 0; i < eventos.size(); i++ ){
+             total += eventos.get(i).getValor();
+Index: app/src/main/java/com/ifmg/carteiramensal/itemListaEvento.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/java/com/ifmg/carteiramensal/itemListaEvento.java	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/java/com/ifmg/carteiramensal/itemListaEvento.java	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -16,7 +16,7 @@
+ import java.util.Calendar;
+ 
+ import modelo.Evento;
+-// classe que define o comportamento e informações de cada um dos itens da lista de eventos
++// classe que define o comportamento e informacoes de cada um dos itens da lista de eventos
+ public class itemListaEvento extends ArrayAdapter<Evento> {
+ 
+     private Context contestoPai;
+@@ -47,7 +47,7 @@
+ 
+         final View resultado;
+ 
+-        //1* é quando a lista esta sendo montada pela primeira vez.
++        //1- quando a lista esta sendo montada pela primeira vez
+         if(convertView == null){
+             novaView = new ViewHorder();
+ 
+@@ -64,19 +64,19 @@
+             resultado = convertView;
+             convertView.setTag(novaView);
+         }else{
+-            //2* item modificado
++            //2- item modificado
+             novaView = (ViewHorder) convertView.getTag();
+             resultado = convertView;
+ 
+         }
+-        //vamos setar os valores de cada campo
++        //vamos settar os valores de cada campo
+         novaView.nomeTxt.setText(eventoAtual.getNome());
+         novaView.valorTxt.setText(eventoAtual.getValor()+"");
+         novaView.fotoTxt.setText(eventoAtual.getCaminhoFoto() == null ? "Nao" : "Sim");
+         SimpleDateFormat formataData = new SimpleDateFormat("dd/mm/yyyy");
+         novaView.dataTxt.setText(formataData.format(eventoAtual.getOcorreu()));
+ 
+-        //Verificando se o evento repete
++        //Verificar se o evento repete
+         Calendar data1 = Calendar.getInstance();
+         data1.setTime(eventoAtual.getOcorreu());
+ 
+Index: app/src/main/java/ferramentas/EventosDB.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/java/ferramentas/EventosDB.java	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/java/ferramentas/EventosDB.java	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -51,8 +51,54 @@
+         }
+ 
+     }
+-    public void atualizaEvento(){
++    public void updateEvento(Evento eventoAtualizado){
++        try(SQLiteDatabase db = this.getWritableDatabase()){
++            ContentValues valores = new ContentValues();
++            valores.put("nome", eventoAtualizado.getNome());
++            valores.put("valor", eventoAtualizado.getValor());
++            valores.put("imagem", eventoAtualizado.getCaminhoFoto());
++            valores.put("dataocorreu", eventoAtualizado.getOcorreu().getTime());
++            valores.put("datavalida", eventoAtualizado.getValida().getTime());
++
++            db.update("evento", valores, "id = ?", new String[]{eventoAtualizado.getId()+ ""});
+ 
++
++        }catch (SQLiteException ex){
++            System.err.println("erro no atualização do evento");
++            ex.printStackTrace();
++        }
++
++    }
++
++    public Evento buscaEvento(int idEvento){
++        String sql = "SELECT*FROM evento WHERE id = "+idEvento;
++
++        Evento resultado = null;
++
++        try(SQLiteDatabase db = this.getWritableDatabase()){
++            //executa a sql
++            Cursor tupla = db.rawQuery(sql, null);
++
++            //extrai as informacoes do evento
++            if(tupla.moveToFirst()){
++
++                String nome = tupla.getString(1);
++                double valor = tupla.getDouble(2);
++                if(valor < 0 ){
++                    valor *=-1;
++                }
++                String urlfoto = tupla.getString(3);
++                Date dataocoreu = new Date(tupla.getLong(4));
++                Date datacadastro = new Date(tupla.getLong(5));
++                Date datavalida = new Date(tupla.getLong(6));
++                resultado = new Evento(idEvento, nome, valor, datacadastro, datavalida, dataocoreu, urlfoto);
++            }
++
++        }catch (SQLiteException ex){
++            System.err.println("erro da consulta SQL da busca de evento por id");
++            ex.printStackTrace();
++        }
++        return resultado;
+     }
+     public ArrayList<Evento> buscaEvento(int op, Calendar data){
+ 
+@@ -63,7 +109,8 @@
+         dia1.set(Calendar.HOUR, -12);
+         dia1.set(Calendar.MINUTE, 0);
+         dia1.set(Calendar.SECOND, 0);
+-        //ultimo dia do mes(ultimo minuto)
++
++        //ultimo dia do mes
+         Calendar dia2 = Calendar.getInstance();
+         dia2.setTime(dia2.getTime());
+         dia2.set(Calendar.DAY_OF_MONTH, dia2.getActualMaximum(Calendar.DAY_OF_MONTH));
+@@ -81,7 +128,7 @@
+             //Entradas
+             sql+= ">= 0";
+         }else{
+-            //Saída(indicado por um valor negativo)
++            //Saida(indicado por um valor negativo)
+             sql+="-< 0";
+         }
+ 
+@@ -119,6 +166,6 @@
+ 
+     @Override
+     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+-    //ficará parado até a ativação da activity de update (funcionalidade)
++    //ficara parado ate a ativacao da activity de update
+     }
+ }
+Index: app/src/main/res/layout/activity_cadastro_edicao_evento.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/res/layout/activity_cadastro_edicao_evento.xml	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/res/layout/activity_cadastro_edicao_evento.xml	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -26,7 +26,7 @@
+                 android:text="Título"
+                 android:textSize="30sp" />
+ 
+-            <!-- informação do nome-->
++            <!-- informacao do nome-->
+             <LinearLayout
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+@@ -49,7 +49,7 @@
+ 
+             </LinearLayout>
+ 
+-            <!--Informação Valor-->
++            <!--Informacao Valor-->
+             <LinearLayout
+                 android:layout_width="wrap_content"
+                 android:layout_height="wrap_content"
+@@ -72,7 +72,7 @@
+ 
+             </LinearLayout>
+ 
+-            <!--Informação data do evento-->
++            <!--Informacao data do evento-->
+             <LinearLayout
+                 android:layout_width="wrap_content"
+                 android:layout_height="wrap_content"
+@@ -95,7 +95,7 @@
+                     android:textSize="22sp"/>
+ 
+             </LinearLayout>
+-            <!--informação derepetição-->
++            <!--informacao derepeticao-->
+             <LinearLayout
+                 android:layout_width="wrap_content"
+                 android:layout_height="wrap_content"
+@@ -135,7 +135,7 @@
+                 android:layout_gravity="center"
+                 android:layout_marginBottom="10dp"/>
+ 
+-            <!--Botões de ação-->
++            <!--Botoes de acao-->
+             <LinearLayout
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+Index: app/src/main/res/layout/activity_main.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/res/layout/activity_main.xml	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/res/layout/activity_main.xml	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -6,7 +6,7 @@
+     android:layout_height="match_parent"
+     tools:context=".MainActivity">
+ 
+-    <!--ocupa toda tela do usuário-->
++    <!--ocupa tela inteira do usuario-->
+     <LinearLayout
+         android:layout_width="match_parent"
+         android:layout_height="match_parent"
+@@ -22,15 +22,15 @@
+             android:layout_marginTop="32dp"
+             android:layout_marginBottom="70dp"/>
+ 
+-        <!-- bloco lógico para o centro da tela
+-        botão de entrada, TextView, botão de saída-->
++        <!-- bloco logico para o centro da tela
++        botao de entrada, TextView, botao de saida-->
+         <LinearLayout
+             android:layout_width="wrap_content"
+             android:layout_height="wrap_content"
+             android:orientation="horizontal"
+             android:layout_gravity="center">
+ 
+-            <!-- botão de cadastro de entrada-->
++            <!-- botao de cadastro de entrada-->
+             <ImageButton
+                 android:id="@+id/entradaBtn"
+                 android:layout_width="50dp"
+@@ -39,13 +39,13 @@
+                 android:layout_gravity="center"
+                 android:layout_marginRight="10dp"/>
+ 
+-            <!--bloco lógico para organizar os TextView-->
++            <!--bloco logico para organizar os TextView-->
+             <LinearLayout
+                 android:layout_width="wrap_content"
+                 android:layout_height="wrap_content"
+                 android:orientation="vertical">
+ 
+-                <!--informação da entrada-->
++                <!--informacao da entrada-->
+                 <LinearLayout
+                     android:layout_width="wrap_content"
+                     android:layout_height="wrap_content"
+@@ -68,13 +68,13 @@
+ 
+                 </LinearLayout>
+ 
+-                <!--informações da saída-->
++                <!--informacoes da saida-->
+                 <LinearLayout
+                     android:layout_width="wrap_content"
+                     android:layout_height="wrap_content"
+                     android:orientation="horizontal"
+                     android:layout_gravity="center"
+-                    android:layout_marginBottom="70dp">>
++                    android:layout_marginBottom="70dp">
+ 
+                     <TextView
+                         android:layout_width="wrap_content"
+@@ -88,7 +88,7 @@
+                         android:layout_height="wrap_content"
+                         android:text="0,00"
+                         android:textSize="17sp"
+-                        android:layout_marginLeft="4dp"/>/>
++                        android:layout_marginLeft="4dp"/>
+                 </LinearLayout>
+ 
+                 <!--informações do saldo do mês corrente-->
+@@ -110,12 +110,12 @@
+                         android:layout_height="wrap_content"
+                         android:text="0,00"
+                         android:textSize="17sp"
+-                        android:layout_marginLeft="4dp"/>/>
++                        android:layout_marginLeft="4dp"/>
+ 
+                 </LinearLayout>
+             </LinearLayout>
+ 
+-            <!-- botão de cadastro de saída-->
++            <!-- botao de cadastro de saida-->
+             <ImageButton
+                 android:id="@+id/saidaBtn"
+                 android:layout_width="50dp"
+Index: app/src/main/res/layout/activity_visualizar_eventos.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/res/layout/activity_visualizar_eventos.xml	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/res/layout/activity_visualizar_eventos.xml	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -11,7 +11,7 @@
+         android:layout_height="match_parent"
+         android:orientation="vertical">
+ 
+-        <!--Entradas ou saídas-->
++        <!--Entradas ou saidas-->
+         <TextView
+             android:id="@+id/tituloTxt"
+             android:layout_width="wrap_content"
+@@ -56,7 +56,7 @@
+                 android:layout_marginLeft="5dp"/>
+ 
+         </LinearLayout>
+-        <!--agrupando os botões-->
++        <!--agrupando os botoes-->
+         <LinearLayout
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+Index: app/src/main/res/layout/item_lista_eventos.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/res/layout/item_lista_eventos.xml	(revision c4664a8b92e3c74f13f9c9f3ee69a73b811066d6)
++++ app/src/main/res/layout/item_lista_eventos.xml	(revision 47bbca0417c817f11eedc0ab6ffdfac90c2708d1)
+@@ -5,7 +5,7 @@
+     android:layout_height="wrap_content"
+     android:orientation="vertical">
+ 
+-    <!--delimita o espaço do item-->
++    <!--delimita o espaco do item-->
+     <LinearLayout
+         android:layout_width="match_parent"
+         android:layout_height="wrap_content"
+@@ -14,7 +14,7 @@
+         android:background="@drawable/apenasborda"
+         android:layout_marginBottom="5dp">
+ 
+-        <!--nome do evento-->
++        <!--nome do event-->
+         <LinearLayout
+             android:layout_width="wrap_content"
+             android:layout_height="wrap_content"
+@@ -81,7 +81,7 @@
+                 android:textColor="@color/black"/>
+         </LinearLayout>
+ 
+-        <!--Fotos e indicaçãao da repetição-->
++        <!--Fotos e indicacao da repeticao-->
+         <LinearLayout
+             android:layout_width="wrap_content"
+             android:layout_height="wrap_content"
+diff --git app/src/main/res/mipmap-hdpi/cancelar.png app/src/main/res/mipmap-hdpi/cancelar.png
+index 0db02c84431b1effaa2f2854787594e186b34f1a..435408c85c43ee350693217177e4201b4638a343
+GIT binary patch
+literal 261
+zc$@(R0s8)lP)<h;3K|Lk000e1NJLTq000;O000;W1^@s6;CDUv0002YNkl<ZNK5UM
+z(Gi0%3`3O-x=A|%oxF?yn{)(DcQIE|+wxET;E$ZG7b{8{CVy?RK5l??IJ4-{yT3vu
+zt&0F``gGwpfCwV%GQbMp319=@K}`GwU<a^x8&MWTkdinZP%)*@2w@-XOLuPPrU0xP
+zAzUkoS0=EH{6e@EdOjwuGJ#EDw(vhX_`gI~0ONsDBum!?q5xi6D4-&ILR3tnw0P-q
+zFQdB2Sz1aEb(1-&dqcYi1_|qwMQoh%*vV(OTA)%?)d}lvfVA)c>is+!VSEDR00000
+LNkvXXu0mjf)iP!R
+
+diff --git app/src/main/res/mipmap-hdpi/dinheiro.png app/src/main/res/mipmap-hdpi/dinheiro.png
+index 233bc2b72f2689b0087c58144e9d404e74eb2e2e..17b335289bb3ae30e12c40386b67dbca41eddc2d
+GIT binary patch
+literal 460
+zc$@*u0W<!IP)<h;3K|Lk000e1NJLTq000;O000;W1^@s6;CDUv0004#Nkl<ZNK3Vq
+zfiVO@5Jlf*Km>>Y5g-CYKn92a5g-CY;6y+M$bbmQfO=KaSABc4v#YqS+N!IY>HgjS
+zclS(KvQ3s8pD_T(zz(ogK6834-xPRkCD{Tv0Iq=bfhymDGeEEf>jSt3PRi}K;{05)
+z_HV1%1x#YI+|x&(IjaHW;5Wc&qk<LSA|<nMzYAbS4<+DXrR?u=HrlUyQ9jpzzRddo
+z#Er_0u@O~g0K4TDkaIZ>y94$C>FC;Jp~(L|S0^=@Ri6P2bOdClOj%8eeAjdJI0x<l
+z6P}v`dt3Cql1X+L5<9@{tf$g#+g*U*cNO?59zk1QBXwI-nm%(QWQuA4-VN&dKytS=
+z0csRAMqt)8S%;u#)+j?FXC1~=&=fiNwi1O79m1&wkj0mtm$JL6ZEAr37_^VPAV-gU
+zN&nBQB9DChR>YvIOOv!XSg{ZXmt6$N8&yr*^{xTCLvtYQ7<G&HqB@L24~{@Czn00l
+z75wVK$pPI*elEaxT&yH2s|Jn$W8UO}0@}w*2lxS%J!Tme#rc2$0000<MNUMnLSTZz
+CcE{iV
+
+diff --git app/src/main/res/mipmap-hdpi/excluir.png app/src/main/res/mipmap-hdpi/excluir.png
+index c85cec04e09d4e8165a15f780fc3407c77d0df9b..430838ded7c55c0e6b81e46e1cbac16d557582bd
+GIT binary patch
+literal 197
+zc%17D@N?(olHy`uVBq!ia0vp^5+KaM1|%Pp+x`GjJ)SO(As*gurv`F081Oi6p1jih
+z`eaS5$+=5REV#6O?OwA!v&);~Ur<49MT6vl2PPY{)w~}whFx43>CPIl>&^jVhF2Cx
+zR?hu7?b;#6oyO(s+E}alTR;0cyzbihM(QH}3Ning>layet;&{~*Z8UW#jQo<OjFj)
+wTy|<|>l&NMVl|8g)7tNKmt8+vsxPyFG0Dh4vPqL83Fs~cPgg&ebxsLQ0B+|_7XSbN
+
+diff --git app/src/main/res/mipmap-hdpi/foto.png app/src/main/res/mipmap-hdpi/foto.png
+index c18c835c9cb5d2440d94e31eaf8a956ab132f289..356b1bf6ed591bfb15ba1ffed342194c468188a2
+GIT binary patch
+literal 285
+zc$@(p0pk9NP)<h;3K|Lk000e1NJLTq000;O000;W1^@s6;CDUv0002wNkl<ZNK3_)
+zYZ1aQ5C*pnaDW6r0Tz$|4nP4o0SVv)9N+}zI=xONy^w4AAivs4W;gfcRWWg^CgwA%
+z;0dfosz_KHVTBcZMuID*W?O=xvFSwrFW3QRU;&(fyE8&}1#e*4K-)!gNQwk6U>(5s
+zz!o?dLbpI7x-=0TgNOuvZNN7};uctGgmCSTCB=deuF+VP6bWLu%vzciS8qWIt`Wr&
+z`EL(#?j+~nmc)Hkc;P9@&#R&@+>#^(vO{!t$hR)2;}F+FvWx5m<;Ha?81un-0CE$|
+j`()-yF6tlpdS#_wX4yd*!!nx900000NkvXXu0mjfGyicU
+
+diff --git app/src/main/res/mipmap-hdpi/ico.png app/src/main/res/mipmap-hdpi/ico.png
+index 936164d2d386e74c4f4d642593bb0b0715779e0a..214890b211b591533577040f0db1171a51367bda
+GIT binary patch
+literal 263
+zc$@(T0r>ujP)<h;3K|Lk000e1NJLTq000;O000;W1^@s6;CDUv0002aNkl<ZNK5UN
+z(Gh|$5JWExsUIo8PQVhd5$r(h2S2bN*EvbX1dm)8gc)bxGl6}3d&yyF;m0hjPwN8q
+zZ3V8Vv-Quwk<bR%wN+yX=<Ma>56|R?BoP+t*Qw}*(Rj!tz?ew9P6VRc!`3CEvH?R8
+z?-XRr$9XKC4UomZuW0Bzy9ZMF&Y8>G)e^)KqLUG&vJLkn=UEjT?&lJ~^?fb`hYaC8
+z-%x3;sZD0c6F8<sQUg;3%$>FyKuu7LNc~EAA^e}L3z+L%y$62@cmae+of(M#GwuKY
+N002ovPDHLkV1nwAa902T
+
+diff --git app/src/main/res/mipmap-hdpi/ok.png app/src/main/res/mipmap-hdpi/ok.png
+index 1643ad88fef097c4e334fba239f9695b1e411e0d..a8ecb7c2aca0d679c28b778e4b6756e68c9eeab0
+GIT binary patch
+literal 257
+zc%17D@N?(olHy`uVBq!ia0vp^5+KaM1|%Pp+x`GjCp=voLp;2bQx+H|EZO*zXR(+7
+z&%=enE^O)DLjV5%Pp`k2;-s```-(@*9S{FMZ{|t+^Z)+Grk5?u2HqOm7>*XW9XrB(
+ztd@JlGiIl@=GvBdJUo7)5(Wmwk_&dTILj7oNGP<treI_dukhi&{$pk~Hnuu9n^_%&
+zmgg)Kmdu=Bv&(;@n~|Qghp9}q%z>DOJP8k(c_JTK<OA&vq;cB#cpAv8=P&r#67Wjt
+zB>RbJ1_lNkF$V8uJ8UR%4t6N?Q%iZcg0;mdL*mLwhRUcKNvnKuKcJr&JYD@<);T3K
+F0RUckUKIcU
+
+diff --git app/src/main/res/mipmap-hdpi/pagar.png app/src/main/res/mipmap-hdpi/pagar.png
+index cde2a65bdf5744e850283bef94100aa2c2f0e483..ef23c497782c0b974f5ee68a0809fddfa0dea396
+GIT binary patch
+literal 176
+zc%17D@N?(olHy`uVBq!ia0vp^5+KaM1|%Pp+x`Gj<(@8%As*hzDGLk}mTdgVQ?m5|
+z12c28?bI3;qtk*ZVw?E?1)nUKVVJOaW28gohJ!LzS&Zi-lqFoQbY;&ebSUO_3l==+
+zA!p*)61U}mjGL+ag*!|!Cue5aDcok7m1>d|X2C8gAt7_&HFMTZnWHjZmu(!~FWzBd
+Y;C!hh=^pIj3v>d5r>mdKI;Vst0CMg*NdN!<
+
+diff --git app/src/main/res/mipmap-hdpi/soma.png app/src/main/res/mipmap-hdpi/soma.png
+index 328b92d38fe9224a9fae78a4a211cee13a61c621..4bdec92d9fd9f374c93dede972a7c3142473403b
+GIT binary patch
+literal 143
+zc%17D@N?(olHy`uVBq!ia0vp^5+KaM1|%Pp+x`GjVV*9IAs*hzDGLk}mTdgVvsg@k
+zCo!n`h5Z$mMPCKi3S@m)!OHSD=LL)4nWZdyTb3~>Uwq)@YO<YS`ssE*nVw$^a!k$Z
+qbd*fvd#+`)IQLxfP|H!8#l;Y_g-`OZ1@Akc4Gf;HelF{r5}E)8gD-Ia
+
+diff --git app/src/main/res/mipmap-hdpi/sub.png app/src/main/res/mipmap-hdpi/sub.png
+index 058757567ea72b80ccaf33087045b0fdf56860aa..1050607dd0fde9ef1fa0a2b1bfd1a552ce4ec343
+GIT binary patch
+literal 124
+zc%17D@N?(olHy`uVBq!ia0vp^5+KaM1|%Pp+x`Gj&YmugAs*hzDGLk}mTdgVvsg@k
+z=ix;KDPE-}MTY>!bs=BoFYtTAWpGB?fcwN3hGp9>_P7~nxHo5*ba1pWII^1fyD}WU
+W%_Mmu^T9%(aSWcWelF{r5}E)L>LuF%
+
